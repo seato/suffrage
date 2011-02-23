@@ -1,0 +1,59 @@
+/*
+ * Title:  suffrage
+ * Author:  Richard Thai and Garrick Merrill
+ * Created:  12/16/2010
+ * Modified:  2/22/2011
+ *
+ * Prerequisite: IMPORTANT!  The IXM's that download this code MUST have an
+ * integer ID programmed in beforehand.  Use the IXM BIOS to set the board
+ * NAME ((n=NAME) according to the help menu).  Note that the input is stored
+ * on the boards in base-36 so that it can accept letters in addition to
+ * integers (26 letters + 10 integers = 36 symbols).  You don't need an
+ * 'integer' ID, but it's certainly a good idea since the IXM's are typically
+ * shipped with a unique 8 digit identifying sticker.
+ * Info on accessing the BIOS can be found in the Antipasto Hardware Wiki on
+ * http://antipastohw.pbworks.com/w/page/30205779/IXM-Bios-Tutorial.
+ *
+ * Description:  This is a demonstration of the redundant qualities of the IXM.
+ * Each board performs the same calculation (finding the n_th prime number) and
+ * casts its answer as a vote within its interval-ping (heart-beat).  All votes
+ * are distributed among the connected boards and a majority is determined with
+ * every new vote.  Each board then recognizes the status of the grid (majority,
+ * minority, or tie) and lights up its green, red or no LED respectively.  A
+ * blue LED lights up to signify that it is currently processing (if you can
+ * catch it, it's rather fast).
+ *
+ * Button Function:
+ * To simulate incorrect answers, the button on
+ * the IXM can be pressed the adjust what the affected IXM calculates.  In this
+ * case, the "incorrect" calculation is for the (n + 1)_th prime instead of the
+ * n_th prime.
+ *
+ * Terminal Commands:
+ * >> x         - force a reboot to all IXM's in the grid
+ * >> t         - request to stop sending heart-beat packets (starts with "r"
+ *                followed by a combination of numbers and commas) and to start
+ *                displaying the local IXM's internal table which will update on
+ *                an interval
+ * >> cN        - request to initiate a calculation for the N_th prime to all
+ *                IXM's within the grid.  The vote for said calculation will be
+ *                broadcast the moment it is generated.  Replace the 'N' with
+ *                the N_th prime to calculate, for example:  c15 is a request to
+ *                calculate the 15th prime.  There is a limit programmed within
+ *                the boards as to how high of a prime they can take which can be
+ *                found within the header file as "PRIME_THRESHOLD" and
+ *                "PRIME_ARR_THRESHOLD" which is the prime sequence and the prime
+ *                value plus one, respectively.  Change those for higher primes!
+ *
+ * Notes:
+ * The boards do not rely on a slave/master setup, meaning that every internal
+ * could potentially be different.  A weakness is that IXM(s) in the grid could
+ * have discordant data.  However, this setup also allows IXM's to have no single
+ * point of failure should an arbitrary board encounter a data/network fault
+ * (assuming grid with redundant networking paths).
+ * As the amount of IXM's increase, data and networking redundancy increase:
+ *  - 2+ boards allow a consensus to be made
+ *  - 3+ boards allow an incorrect vote to be determined
+ *  - 4+ boards (in grid formation) ensure that a single failed board will
+ *    not disrupt data paths for remaining boards
+ */
