@@ -1,8 +1,8 @@
 /*
- * Title:  suffrage
+ * Title:  suffrage2
  * Author:  Richard Thai and Garrick Merrill
  * Created:  12/16/2010
- * Modified:  2/22/2011
+ * Modified:  2/25/2011
  *
  * Prerequisite: IMPORTANT!  The IXM's that download this code MUST have an
  * integer ID programmed in beforehand.  Use the IXM BIOS to set the board
@@ -246,8 +246,8 @@ R_ZPrinter(u8 face, void * arg, bool alt, int width, bool zerofill)
 
   R_PKT PKT_T = *(R_PKT*) arg;
 
-  facePrintf(face, "%t,%d,%d,%d,%d", PKT_T.key.ID, PKT_T.key.TIME, PKT_T.calc,
-      PKT_T.calc_ver, PKT_T.rslt);
+  facePrintf(face, "%t,%d,%d,%d,%d,%d", PKT_T.key.ID, PKT_T.key.TIME,
+      PKT_T.calc, PKT_T.calc_ver, PKT_T.rslt, PKT_T.neighbor);
 
   return;
 }
@@ -267,9 +267,10 @@ R_ZScanner(u8 * packet, void * arg, bool alt, int width)
   u32 CALC; // integer calculation
   u32 CALC_VER; // integer calculation version
   u32 VOTE; // integer vote
+  u32 NEIGHBOR; // neighbor flag
 
-  if (packetScanf(packet, "%t,%d,%d,%d,%d", &ID, &TIME, &CALC, &CALC_VER, &VOTE)
-      != 9)
+  if (packetScanf(packet, "%t,%d,%d,%d,%d,%d", &ID, &TIME, &CALC, &CALC_VER,
+      &VOTE, &NEIGHBOR) != 11)
     {
       logNormal("Inconsistent packet format for (r)esult packet.\n");
       return false;
@@ -283,6 +284,7 @@ R_ZScanner(u8 * packet, void * arg, bool alt, int width)
       PKT_R->calc = CALC;
       PKT_R->calc_ver = CALC_VER;
       PKT_R->rslt = VOTE;
+      PKT_R->neighbor = NEIGHBOR;
     }
 
   return true;
@@ -318,6 +320,70 @@ FWD_R_PKT(struct R_PKT *PKT_T, u8 face)
       facePrintf(i, "r%Z%z\n", R_ZPrinter, PKT_T);
 
   return;
+}
+
+/*
+ * Summary:     Alarm to reboot a board
+ * Parameters:  Time when function was called (handled automagically).
+ * Return:      None.
+ */
+void
+reboot(u32 when)
+{
+  for (u32 i = 0; i < FACE_COUNT; ++i)
+    if (REBOOT_ARR[i])
+      {
+        powerOut(REBOOT_ARR[i], 1);
+        REBOOT_ARR[i] = 0;
+      }
+
+  return;
+}
+
+/*
+ * Summary:     Checks to see if the given node is a neighbor.
+ * Parameters:  u32 ID.
+ * Return:      face, or INVALID if it's not a neighbor.
+ */
+u32
+getNeighborFace(u32 id)
+{
+  for (u32 i = 0; i < FACE_COUNT; ++i) // Look through the array
+    if (id == NEIGHBORS_ARR[i]) // If we find a match
+      return i; // Say it's face
+
+  return INVALID; // Otherwise, it's not a neighboring node
+}
+
+/*
+ * Summary:     Swiftly looks to see what IXM's have given an incorrect answer and
+ *              updates the tables accordingly.
+ * Parameters:  None.
+ * Return:      None.
+ */
+void
+strikeCheck()
+{
+  u32 face;
+
+  for (u32 i = 0; i < NODE_COUNT; ++i)
+    {
+      if (VOTE_NODE_ARR[i] != MAJORITY_RSLT)
+        ++STRIKES_NODE_ARR[i];
+      else
+        STRIKES_NODE_ARR[i] = 0;
+
+      face = getNeighborFace(ID_NODE_ARR[i]);
+
+      if ((STRIKES_NODE_ARR[i] > 2) && (INVALID != face))
+        {
+          powerOut(face, 0);
+          REBOOT_ARR[face] = 1;
+
+          Alarms.set(Alarms.create(reboot), millis() + reboot_PERIOD); // Set a reboot
+          return;
+        }
+    }
 }
 
 /*
@@ -577,6 +643,12 @@ r_handler(u8 * packet)
   else if (0xffffffff == PKT_R.calc_ver)
     logNormal("Calculation version overflow.\n");
 
+  if (PKT_R.neighbor)
+    { // If this a neighboring node
+      PKT_R.neighbor = 0; // Reset the flag before forwarding
+      NEIGHBORS_ARR[packetSource(packet)] = PKT_R.key.ID; // And remember the ID
+    }
+
   // If all the hoops have been jumped through
   FWD_R_PKT(&PKT_R, packetSource(packet)); // Forward the packet
 
@@ -586,6 +658,7 @@ r_handler(u8 * packet)
 
   else if (PKT_R.calc_ver > HOST_CALC_VER) // New calculation version?
     { // perform standard procedures
+      strikeCheck(); // evaluate the strikes for my neighbors
       flush(); // clear out my records for the new voting session
       voteCount(NODE_INDEX, PKT_R.rslt); // Remember the node's vote
       HOST_CALC = PKT_R.calc; // Remember the new calculation
@@ -627,6 +700,7 @@ c_handler(u8 * packet)
       return;
     }
 
+  strikeCheck(); // evaluate the strikes for my neighbors
   flush(); // clear out my records for the new voting session
 
   R_PKT PKT_T; // synthesize a new packet
@@ -666,32 +740,34 @@ printTable(u32 when)
 
   facePrintf(
       TERMINAL_FACE,
-      "\n\n\n\n\n\n\n\n\n\n\n\n\n+===================================================+\n");
+      "\n\n\n\n\n\n\n\n\n\n\n\n\n+===============================================================+\n");
   facePrintf(TERMINAL_FACE,
-      "|CALCULATION: %4d     HOST TIME: %010d        |\n", HOST_CALC, HOST_TIME);
+      "|CALCULATION: %4d     HOST TIME: %010d                    |\n",
+      HOST_CALC, HOST_TIME);
   facePrintf(TERMINAL_FACE,
-      "+---------------------------------------------------+\n");
+      "+---------------------------------------------------------------+\n");
   facePrintf(TERMINAL_FACE,
-      "|ID       ACTIVE     TIME-STAMP     VOTE       PINGS|\n");
+      "|ID       ACTIVE     TIME-STAMP     VOTE       STRIKES     PINGS|\n");
   facePrintf(TERMINAL_FACE,
-      "+----     ------     ----------     ------     -----+\n");
+      "+----     ------     ----------     ------     -------     -----+\n");
   for (u32 i = 0; i < NODE_COUNT; ++i)
     {
-      facePrintf(TERMINAL_FACE, "|%04t          %c%15d%11d%10d|\n",
+      facePrintf(TERMINAL_FACE, "|%04t          %c%15d%11d%12d%10d|\n",
           ID_NODE_ARR[i], ACTIVE_NODE_ARR[i], TS_HOST_ARR[i], VOTE_NODE_ARR[i],
-          PC_NODE_ARR[i]);
+          STRIKES_NODE_ARR[i], PC_NODE_ARR[i]);
     }
   facePrintf(TERMINAL_FACE,
-      "+---------------------------------------------------+\n");
+      "+---------------------------------------------------------------+\n");
   if ((TIE == MAJORITY_RSLT) || (INVALID == MAJORITY_RSLT) || (0
       == MAJORITY_RSLT))
     facePrintf(TERMINAL_FACE,
-        "|MAJORITY: --                                       |\n");
+        "|MAJORITY: --                                                   |\n");
   else
     facePrintf(TERMINAL_FACE,
-        "|MAJORITY: %4d                                     |\n", MAJORITY_RSLT);
+        "|MAJORITY: %4d                                                 |\n",
+        MAJORITY_RSLT);
   facePrintf(TERMINAL_FACE,
-      "+===================================================+\n");
+      "+===============================================================+\n");
 
   // schedule the next table printout
   Alarms.set(Alarms.currentAlarmNumber(), when + printTable_PERIOD);
@@ -748,6 +824,7 @@ heartBeat(u32 when)
   PKT_T.calc = HOST_CALC;
   PKT_T.calc_ver = HOST_CALC_VER;
   PKT_T.rslt = VOTE_NODE_ARR[0];
+  PKT_T.neighbor = 1;
 
   if (PC_NODE_ARR[0] > (PKT_T.key.TIME / 1000)) // Spam self-safeguard
     {
@@ -766,7 +843,10 @@ heartBeat(u32 when)
           : 'I'); // For displaying activity/inactivity on the table
 
       if ('I' == ACTIVE_NODE_ARR[i])
-        PC_NODE_ARR[i] = 0;
+        { // If a board goes inactive
+          PC_NODE_ARR[i] = 0; // Reset their pings
+          STRIKES_NODE_ARR[i] = 0; // And their strike counts
+        }
     }
 
   // Schedule the next heartbeat

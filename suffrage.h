@@ -2,7 +2,7 @@
  * Title:  suffrage
  * Author:  Richard Thai and Garrick Merrill
  * Created:  1/12/2010
- * Modified:  2/22/2011
+ * Modified:  2/25/2011
  *
  * Description:  Header file containing variables, constants, and data structures
  * needed for suffrage sketch.
@@ -28,6 +28,7 @@ const u16 IDLE = 5000; // limit for absence of ping until IXM node is considered
 const u16 pingAll_PERIOD = 1000; // interval for heartbeat
 const u16 printTable_PERIOD = 500; // interval for refreshing the table
 const u16 FAULT_STATUS_PERIOD = 500; // interval for LED flash initialization
+const u16 reboot_PERIOD = 5000; // power off time during reboot
 const u32 VOTE_COUNT_MIN = 2; // minimum number of voters for majority vote calculation
 const u32 ID_HOST = getBootBlockBoardId(); // host ID
 const u32 LED_PIN[3] = // LED PINS to cycle through
@@ -60,6 +61,12 @@ u32 TS_NODE_ARR[32] =
   { 0 }; // last-received time-stamp of nodes from respective node packets
 u32 CANDIDATE_VOTES_ARR[32] =
   { 0 }; // vote-count for the respective results
+u32 STRIKES_NODE_ARR[32] =
+  { 0 }; // strike-count for respective nodes
+u32 NEIGHBORS_ARR[FACE_COUNT] =
+  { 0 }; // keep track of neighboring nodes; black array
+u32 REBOOT_ARR[FACE_COUNT] =
+  { 0 }; // keep track of faces to be rebooted
 
 /*
  * Summary:     Distinguishing keys for IXM node and packet
@@ -91,6 +98,7 @@ struct R_PKT
   u32 calc; // denotes the n_th prime calculation
   u32 calc_ver; // denotes the calculation version
   u32 rslt; // denotes the n_th prime result
+  u32 neighbor; // flag sent from neighboring nodes
 };
 
 #endif
